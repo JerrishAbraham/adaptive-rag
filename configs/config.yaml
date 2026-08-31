@@ -1,0 +1,93 @@
+dataset:
+  name: HotpotQA
+  config: distractor
+
+embedding:
+  model_name: BAAI/bge-base-en-v1.5
+  normalize_embeddings: true
+
+vector_store:
+  type: FAISS
+  metric: cosine
+
+retrieval:
+  baseline_k: 5
+  adaptive_k_values: [2, 4, 6, 8]
+  max_k: 8
+  max_iterations: 3
+
+chunking:
+  chunk_size: 400
+  chunk_overlap: 75
+
+diversity:
+  lambda: 0.7
+
+generation:
+  model_name: null
+  temperature: 0.0
+  max_tokens: 512
+
+query_analysis:
+  # Feature weights for combining into a single 0-1 complexity score.
+  # All configurable and tunable later on dev data — not claimed optimal.
+  weights:
+    length: 0.25
+    entity_count: 0.35
+    multi_hop_cues: 0.25
+    comparison_cues: 0.15
+
+  # Normalization caps: feature values are clipped to these before
+  # scaling to 0-1, so one unusually long/entity-dense query doesn't
+  # dominate the score.
+  normalization:
+    max_word_count: 30
+    max_entity_count: 6
+
+  # Lightweight deterministic cue word lists (not an NLP model).
+  comparison_cue_words:
+    - "compare"
+    - "compared"
+    - "comparison"
+    - "difference"
+    - "differences"
+    - "versus"
+    - " vs "
+    - "which is more"
+    - "which one"
+    - "similar"
+    - "similarities"
+
+  multi_hop_cue_words:
+    - "that"
+    - "who"
+    - "which"
+    - "whose"
+    - "both"
+    - "and"
+
+  intent_keywords:
+    explanatory:
+      - "why"
+      - "how does"
+      - "how did"
+      - "explain"
+    summarization:
+      - "summarize"
+      - "list"
+      - "describe all"
+      - "overview of"
+
+adaptive_controller:
+  # Maps a complexity_score band to an initial K, drawn from
+  # retrieval.adaptive_k_values. Bands are configurable/tunable.
+  # Intent can bump K up by one step regardless of score band.
+  complexity_bands:
+    - {max_score: 0.20, initial_k: 2}
+    - {max_score: 0.45, initial_k: 4}
+    - {max_score: 0.70, initial_k: 6}
+    - {max_score: 1.01, initial_k: 8}
+
+  intent_bump:
+    reasoning_multi_hop: 1   # steps up in adaptive_k_values
+    comparison: 1
