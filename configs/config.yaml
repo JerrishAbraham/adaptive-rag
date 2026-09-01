@@ -91,3 +91,24 @@ adaptive_controller:
   intent_bump:
     reasoning_multi_hop: 1   # steps up in adaptive_k_values
     comparison: 1
+
+context_quality:
+  # Weights for combining retrieval-side signals into one Retrieval
+  # Confidence Score (0-1). Configurable/tunable on dev data.
+  weights:
+    top_similarity: 0.40
+    mean_similarity: 0.25
+    score_gap: 0.15
+    unique_sources: 0.20
+
+  # Confidence threshold: at/above this, evidence is accepted.
+  confidence_threshold: 0.55
+
+  # Normalization caps for raw signals before scaling to 0-1.
+  normalization:
+    max_score_gap: 0.15        # top1 - top2 similarity gap cap
+    max_unique_sources: 4      # unique source documents cap
+
+diversity:
+  lambda: 0.7        # MMR trade-off: relevance vs diversity (already existed, kept here for reference)
+  target_context_size: 6   # max chunks retained after diversity filtering
