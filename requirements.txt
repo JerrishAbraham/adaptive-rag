@@ -8,4 +8,5 @@ datasets
 tqdm
 pyyaml
 matplotlib
-jupyter
+jupytergroq==1.7.0
+python-dotenv==1.2.3

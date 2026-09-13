@@ -112,3 +112,11 @@ context_quality:
 diversity:
   lambda: 0.7        # MMR trade-off: relevance vs diversity (already existed, kept here for reference)
   target_context_size: 6   # max chunks retained after diversity filtering
+
+generator:
+  provider: groq
+  model: openai/gpt-oss-20b
+  temperature: 0.2
+  max_tokens: 512
+  reasoning_effort: low
+  timeout: 60
