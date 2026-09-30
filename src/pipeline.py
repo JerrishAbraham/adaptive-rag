@@ -46,6 +46,8 @@ class PipelineResult:
     generation_error: str | None
     total_latency_seconds: float
     metadata: dict = field(default_factory=dict)
+    sufficient: bool = False
+    quality_metrics: dict = field(default_factory=dict)
 
 
 class AdaptiveRAGPipeline:
@@ -131,6 +133,12 @@ class AdaptiveRAGPipeline:
         num_iterations = sum(1 for d in decision_history if d.action == "expand") + 1
         final_k = decision_history[-1].current_k
 
+        final_results, quality_history, decision_history = run_adaptive_loop(
+        profile, self.index, self.metadata, initial_results, initial_decision,
+        self.quality_config, self.k_values, self.max_k, self.max_iterations,
+        self.chunk_embeddings,   # <-- new argument
+)
+
         result = PipelineResult(
             question=question,
             answer=gen_result.answer,
@@ -151,6 +159,8 @@ class AdaptiveRAGPipeline:
                 "input_tokens": gen_result.input_tokens,
                 "output_tokens": gen_result.output_tokens,
             },
+            sufficient=quality_history[-1].sufficient,        # <-- new
+            quality_metrics=quality_history[-1].metrics,
         )
         logger.info(
             "Pipeline complete: intent=%s k=%d->%d confidence=%.3f gen_success=%s latency=%.2fs",

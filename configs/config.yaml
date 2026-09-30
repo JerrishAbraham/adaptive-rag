@@ -93,16 +93,16 @@ adaptive_controller:
     comparison: 1
 
 context_quality:
-  # Weights for combining retrieval-side signals into one Retrieval
-  # Confidence Score (0-1). Configurable/tunable on dev data.
-  weights:
-    top_similarity: 0.40
-    mean_similarity: 0.25
-    score_gap: 0.15
-    unique_sources: 0.20
+  confidence_threshold: 0.55   # unchanged value — not tuned per instruction 9
 
-  # Confidence threshold: at/above this, evidence is accepted.
-  confidence_threshold: 0.55
+  weights:
+    rank_weighted_relevance: 0.50
+    evidence_diversity: 0.30
+    expansion_pressure: 0.20
+
+  gate:
+    floor: 0.45
+    ceiling: 0.75
 
   # Normalization caps for raw signals before scaling to 0-1.
   normalization:

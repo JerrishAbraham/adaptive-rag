@@ -30,6 +30,9 @@ class BaselineResult:
     generation_error: str | None
     total_latency_seconds: float
     metadata: dict = field(default_factory=dict)
+    confidence_score: float | None = None
+    sufficient: bool | None = None
+    quality_metrics: dict = field(default_factory=dict)
 
 
 class FixedTopKPipeline:

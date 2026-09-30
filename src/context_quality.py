@@ -1,17 +1,23 @@
 """
 Module 3, Steps 11-12 — Context Quality Assessment and Bounded Adaptive Loop.
+REVISED (v2): RankWeightedRelevance / EvidenceDiversity / ExpansionPressure
+confidence estimator, replacing the v1 top/mean-similarity + score_gap +
+unique_sources formula.
 
-Computes a Retrieval Confidence Score from retrieval-side signals only
-(no LLM call), decides accept vs expand, and runs the bounded
-retrieve -> assess -> expand loop with a hard max_iterations and max_k
-ceiling. This module owns the loop; Module 2's adaptive_controller
-performs only the single initial retrieval that seeds it.
+Legacy metrics (top_similarity, mean_similarity, score_gap, unique_sources)
+are still computed and reported in the metrics dict for comparison, but no
+longer contribute to the confidence formula.
+
+Fully deterministic — no LLM call anywhere in this module.
 """
 
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass, field
+
+import numpy as np
 
 from src.adaptive_controller import AdaptiveDecision, retrieve_with_k
 from src.query_analyzer import QueryProfile
@@ -27,83 +33,146 @@ class QualityResult:
     reason: str = ""
 
 
-def _clip_and_scale(value: float, max_value: float) -> float:
-    if max_value <= 0:
-        return 0.0
-    clipped = max(0.0, min(value, max_value))
-    return clipped / max_value
-
-
-def compute_quality_metrics(results: list[dict]) -> dict:
+def compute_rank_weighted_relevance(scores: list[float]) -> float:
     """
-    Compute raw retrieval-side signals from a list of RetrievalResult
-    dicts (as returned by vector_store.search).
+    Rank-discounted average similarity across the full ranked list.
+    discount_i = 1/log2(i+1) for rank i=1..K. Range: [0, 1].
+    """
+    if not scores:
+        return 0.0
+    discounts = [1.0 / math.log2(i + 2) for i in range(len(scores))]
+    weighted_sum = sum(s * d for s, d in zip(scores, discounts))
+    total_weight = sum(discounts)
+    return weighted_sum / total_weight if total_weight > 0 else 0.0
 
-    Signals: top similarity, mean similarity, score gap (top1 - top2,
-    0 if fewer than 2 results), and unique source document count.
+
+def compute_evidence_diversity(embedding_matrix: np.ndarray) -> float:
+    """
+    1 - average pairwise cosine similarity among retrieved chunk embeddings.
+    Embeddings assumed L2-normalized. Range: [0, 1]. Requires >= 2 embeddings.
+    """
+    n = embedding_matrix.shape[0]
+    if n < 2:
+        return 0.0
+    sim_matrix = embedding_matrix @ embedding_matrix.T
+    iu = np.triu_indices(n, k=1)
+    pairwise_sims = sim_matrix[iu]
+    if pairwise_sims.size == 0:
+        return 0.0
+    avg_pairwise = float(np.mean(pairwise_sims))
+    return float(np.clip(1.0 - np.clip(avg_pairwise, 0.0, 1.0), 0.0, 1.0))
+
+
+def compute_tail_strength(scores: list[float]) -> float:
+    """score_K / score_1. Range: [0, 1]. 0.0 if K<2 or score_1<=0."""
+    if len(scores) < 2:
+        return 0.0
+    if scores[0] <= 0:
+        return 0.0
+    return float(np.clip(scores[-1] / scores[0], 0.0, 1.0))
+
+
+def compute_gate(rwr: float, floor: float, ceiling: float) -> float:
+    """Linear gate: 0 below floor, 1 at/above ceiling. Range: [0, 1]."""
+    if ceiling <= floor:
+        logger.warning("Gate ceiling (%.3f) <= floor (%.3f); gate forced to 0.", ceiling, floor)
+        return 0.0
+    return float(np.clip((rwr - floor) / (ceiling - floor), 0.0, 1.0))
+
+
+def compute_quality_metrics(results: list[dict], chunk_embeddings: dict, config: dict) -> dict:
+    """
+    Computes both legacy (reported only) and new (formula-driving) signals.
+
+    Args:
+        results: RetrievalResult dicts (similarity_score, chunk_id, document_id),
+            sorted descending by similarity.
+        chunk_embeddings: dict chunk_id -> np.ndarray (L2-normalized).
+        config: the 'context_quality' section of config.yaml.
     """
     if not results:
         return {
-            "top_similarity": 0.0,
-            "mean_similarity": 0.0,
-            "score_gap": 0.0,
-            "unique_sources": 0,
-            "num_results": 0,
+            "top_similarity": 0.0, "mean_similarity": 0.0, "score_gap": 0.0,
+            "unique_sources": 0, "num_results": 0,
+            "rank_weighted_relevance": 0.0, "evidence_diversity": 0.0,
+            "tail_strength": 0.0, "gate_value": 0.0, "expansion_pressure": 0.0,
         }
 
     scores = [r["similarity_score"] for r in results]
+
+    # --- legacy (retained for comparison only; NOT used in the formula) ---
     top_similarity = scores[0]
     mean_similarity = sum(scores) / len(scores)
     score_gap = (scores[0] - scores[1]) if len(scores) > 1 else 0.0
     unique_sources = len({r["document_id"] for r in results})
 
+    # --- new (formula-driving) ---
+    rwr = compute_rank_weighted_relevance(scores)
+
+    chunk_ids = [r["chunk_id"] for r in results]
+    if len(chunk_ids) >= 2 and all(cid in chunk_embeddings for cid in chunk_ids):
+        matrix = np.vstack([chunk_embeddings[cid] for cid in chunk_ids]).astype(np.float32)
+        evidence_diversity = compute_evidence_diversity(matrix)
+    else:
+        if len(chunk_ids) >= 2:
+            logger.warning(
+                "compute_quality_metrics: %d/%d chunk embeddings missing; evidence_diversity defaulted to 0.0",
+                sum(1 for cid in chunk_ids if cid not in chunk_embeddings), len(chunk_ids),
+            )
+        evidence_diversity = 0.0
+
+    tail_strength = compute_tail_strength(scores)
+    gate_cfg = config.get("gate", {"floor": 0.45, "ceiling": 0.75})
+    gate_value = compute_gate(rwr, gate_cfg["floor"], gate_cfg["ceiling"])
+    expansion_pressure = gate_value * tail_strength
+
     return {
-        "top_similarity": top_similarity,
-        "mean_similarity": mean_similarity,
-        "score_gap": score_gap,
+        "top_similarity": round(top_similarity, 4),
+        "mean_similarity": round(mean_similarity, 4),
+        "score_gap": round(score_gap, 4),
         "unique_sources": unique_sources,
         "num_results": len(results),
+        "rank_weighted_relevance": round(rwr, 4),
+        "evidence_diversity": round(evidence_diversity, 4),
+        "tail_strength": round(tail_strength, 4),
+        "gate_value": round(gate_value, 4),
+        "expansion_pressure": round(expansion_pressure, 4),
     }
 
 
 def compute_confidence_score(metrics: dict, config: dict) -> float:
     """
-    Combine normalized retrieval-side signals into a single 0-1
-    Retrieval Confidence Score using configurable weights.
-
-    top_similarity and mean_similarity are already 0-1 (cosine sim on
-    normalized embeddings), so they're used directly. score_gap and
-    unique_sources are clipped/scaled against configured caps.
+    confidence = clip(w_rwr*RWR + w_ed*ED - w_ep*expansion_pressure, 0, 1)
+    Legacy metrics are NOT read here — they do not affect this formula.
     """
-    norm_cfg = config["normalization"]
     weights = config["weights"]
-
-    norm_gap = _clip_and_scale(metrics["score_gap"], norm_cfg["max_score_gap"])
-    norm_sources = _clip_and_scale(metrics["unique_sources"], norm_cfg["max_unique_sources"])
-
     score = (
-        weights["top_similarity"] * max(0.0, metrics["top_similarity"])
-        + weights["mean_similarity"] * max(0.0, metrics["mean_similarity"])
-        + weights["score_gap"] * norm_gap
-        + weights["unique_sources"] * norm_sources
+        weights["rank_weighted_relevance"] * metrics["rank_weighted_relevance"]
+        + weights["evidence_diversity"] * metrics["evidence_diversity"]
+        - weights["expansion_pressure"] * metrics["expansion_pressure"]
     )
     return round(min(max(score, 0.0), 1.0), 4)
 
 
-def assess_quality(results: list[dict], config: dict) -> QualityResult:
+def assess_quality(results: list[dict], config: dict, chunk_embeddings: dict | None = None) -> QualityResult:
     """
-    Full quality assessment entry point: compute metrics, combine into a
-    confidence score, and decide sufficient vs insufficient against the
-    configured threshold.
+    Unchanged interface: returns a QualityResult exactly as before.
+    chunk_embeddings defaults to {} (evidence_diversity defaults to 0.0)
+    so any caller not yet updated to pass embeddings fails soft, not hard.
     """
-    metrics = compute_quality_metrics(results)
+    chunk_embeddings = chunk_embeddings or {}
+    metrics = compute_quality_metrics(results, chunk_embeddings, config)
     confidence = compute_confidence_score(metrics, config)
     threshold = config["confidence_threshold"]
     sufficient = confidence >= threshold
 
     reason = (
         f"confidence={confidence} {'>=' if sufficient else '<'} threshold={threshold} "
-        f"(top_sim={metrics['top_similarity']:.3f}, mean_sim={metrics['mean_similarity']:.3f}, "
+        f"(RWR={metrics['rank_weighted_relevance']:.3f}, "
+        f"ED={metrics['evidence_diversity']:.3f}, "
+        f"expansion_pressure={metrics['expansion_pressure']:.3f} "
+        f"[gate={metrics['gate_value']:.3f}, tail={metrics['tail_strength']:.3f}]; "
+        f"legacy: top_sim={metrics['top_similarity']:.3f}, mean_sim={metrics['mean_similarity']:.3f}, "
         f"gap={metrics['score_gap']:.3f}, unique_sources={metrics['unique_sources']})"
     )
 
@@ -122,24 +191,14 @@ def run_adaptive_loop(
     k_values: list[int],
     max_k: int,
     max_iterations: int,
+    chunk_embeddings: dict | None = None,
 ) -> tuple[list[dict], list[QualityResult], list[AdaptiveDecision]]:
     """
-    Bounded retrieve -> assess -> expand loop.
-
-    Starts from the results/decision already produced by Module 2's
-    single initial retrieval. If evidence is insufficient and K has not
-    reached max_k and iteration count has not reached max_iterations,
-    expands K to the next value in k_values and retrieves again.
-
-    Returns:
-        (final_results, quality_history, decision_history)
-        - quality_history: one QualityResult per iteration assessed
-        - decision_history: one AdaptiveDecision per iteration, including
-          the original initial_decision as the first entry
-
-    The loop ALWAYS terminates: either sufficient evidence is found, K
-    reaches max_k, or max_iterations is reached. No infinite loop path exists.
+    Bounded retrieve -> assess -> expand loop. Control flow UNCHANGED from
+    the original implementation — only the assess_quality() call now also
+    receives chunk_embeddings, required for the evidence_diversity metric.
     """
+    chunk_embeddings = chunk_embeddings or {}
     results = initial_results
     decision_history = [initial_decision]
     quality_history: list[QualityResult] = []
@@ -148,7 +207,7 @@ def run_adaptive_loop(
     iteration = 0
 
     while True:
-        quality = assess_quality(results, quality_config)
+        quality = assess_quality(results, quality_config, chunk_embeddings)
         quality_history.append(quality)
         logger.info("Iteration %d assessment: %s", iteration, quality.reason)
 
@@ -184,7 +243,6 @@ def run_adaptive_loop(
             logger.info("Adaptive loop stopped: max_iterations=%d reached.", max_iterations)
             break
 
-        # Expand: move to the next K value in the bounded set.
         idx = k_values.index(current_k) if current_k in k_values else -1
         next_k = k_values[min(idx + 1, len(k_values) - 1)] if idx >= 0 else min(
             [v for v in k_values if v > current_k], default=max_k
