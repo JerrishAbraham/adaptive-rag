@@ -19,9 +19,13 @@ from src.context_quality import (
 CONFIG = {
     "confidence_threshold": 0.55,
     "weights": {
-        "rank_weighted_relevance": 0.50,
+        # Confidence measures context quality only.
+        # Expansion pressure is a separate signal for the adaptive controller.
+        "rank_weighted_relevance": 0.70,
         "evidence_diversity": 0.30,
-        "expansion_pressure": 0.20,
+    },
+    "expansion": {
+        "min_pressure": 0.50,
     },
     "gate": {"floor": 0.45, "ceiling": 0.75},
 }
@@ -78,7 +82,11 @@ def test_k1_no_diversity_no_expansion_pressure():
     assert metrics["expansion_pressure"] == 0.0
 
     confidence = compute_confidence_score(metrics, CONFIG)
-    expected = round(CONFIG["weights"]["rank_weighted_relevance"] * metrics["rank_weighted_relevance"], 4)
+    expected = round(
+        CONFIG["weights"]["rank_weighted_relevance"]
+        * metrics["rank_weighted_relevance"],
+        4,
+    )
     assert abs(confidence - expected) < 1e-6
 
 
@@ -173,6 +181,40 @@ def test_multiple_strong_complementary_results_trigger_expansion_pressure():
     result = assess_quality(results, CONFIG, embeddings)
     print(f"\n[multi-strong-complementary] confidence={result.confidence_score} "
           f"sufficient={result.sufficient} metrics={metrics}")
+
+
+def test_expansion_pressure_does_not_change_confidence():
+    """
+    Confidence measures current context quality only. Expansion pressure is
+    intentionally excluded from the confidence formula.
+    """
+    results = [
+        _make_result("c1", "docA", 0.80),
+        _make_result("c2", "docB", 0.78),
+        _make_result("c3", "docC", 0.77),
+        _make_result("c4", "docD", 0.76),
+    ]
+    embeddings = {
+        "c1": _unit([1, 0, 0, 0]), "c2": _unit([0, 1, 0, 0]),
+        "c3": _unit([0, 0, 1, 0]), "c4": _unit([0, 0, 0, 1]),
+    }
+
+    metrics = compute_quality_metrics(results, embeddings, CONFIG)
+
+    low_pressure_metrics = dict(metrics)
+    low_pressure_metrics["expansion_pressure"] = 0.0
+
+    high_pressure_metrics = dict(metrics)
+    high_pressure_metrics["expansion_pressure"] = 1.0
+
+    low_pressure_confidence = compute_confidence_score(
+        low_pressure_metrics, CONFIG
+    )
+    high_pressure_confidence = compute_confidence_score(
+        high_pressure_metrics, CONFIG
+    )
+
+    assert low_pressure_confidence == high_pressure_confidence
 
 
 def test_assess_quality_empty_results():

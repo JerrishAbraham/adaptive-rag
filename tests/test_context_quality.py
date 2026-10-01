@@ -96,7 +96,7 @@ def test_full_module3_pipeline():
         assert len(quality_history) >= 1
         assert len(decision_history) >= 2  # initial_select + at least one terminal action
         last_action = decision_history[-1].action
-        assert last_action in ("accept", "stop_max_k", "stop_max_iterations")
+        assert last_action in ("accept", "stop_max_k", "stop_max_iterations", "stop_low_expansion_pressure")
         # Loop must never exceed max_iterations expansion steps.
         expand_count = sum(1 for d in decision_history if d.action == "expand")
         assert expand_count < max_iterations

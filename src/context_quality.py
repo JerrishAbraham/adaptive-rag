@@ -1,8 +1,8 @@
 """
 Module 3, Steps 11-12 — Context Quality Assessment and Bounded Adaptive Loop.
-REVISED (v2): RankWeightedRelevance / EvidenceDiversity / ExpansionPressure
-confidence estimator, replacing the v1 top/mean-similarity + score_gap +
-unique_sources formula.
+REVISED (v3): RankWeightedRelevance / EvidenceDiversity confidence estimator
+with ExpansionPressure as a separate retrieval-expansion signal, replacing
+the v1 top/mean-similarity + score_gap + unique_sources formula.
 
 Legacy metrics (top_similarity, mean_similarity, score_gap, unique_sources)
 are still computed and reported in the metrics dict for comparison, but no
@@ -82,7 +82,9 @@ def compute_gate(rwr: float, floor: float, ceiling: float) -> float:
 
 def compute_quality_metrics(results: list[dict], chunk_embeddings: dict, config: dict) -> dict:
     """
-    Computes both legacy (reported only) and new (formula-driving) signals.
+    Computes both legacy (reported only) and new signals. RWR and ED drive
+    context confidence; ExpansionPressure is reported separately for the
+    adaptive expansion decision.
 
     Args:
         results: RetrievalResult dicts (similarity_score, chunk_id, document_id),
@@ -142,14 +144,18 @@ def compute_quality_metrics(results: list[dict], chunk_embeddings: dict, config:
 
 def compute_confidence_score(metrics: dict, config: dict) -> float:
     """
-    confidence = clip(w_rwr*RWR + w_ed*ED - w_ep*expansion_pressure, 0, 1)
+    Context confidence measures the quality of the current retrieved context.
+
+    Expansion pressure is intentionally NOT part of confidence. It is a
+    separate signal used by run_adaptive_loop() to decide whether retrieving
+    additional context is justified.
+
     Legacy metrics are NOT read here — they do not affect this formula.
     """
     weights = config["weights"]
     score = (
         weights["rank_weighted_relevance"] * metrics["rank_weighted_relevance"]
         + weights["evidence_diversity"] * metrics["evidence_diversity"]
-        - weights["expansion_pressure"] * metrics["expansion_pressure"]
     )
     return round(min(max(score, 0.0), 1.0), 4)
 
@@ -194,9 +200,11 @@ def run_adaptive_loop(
     chunk_embeddings: dict | None = None,
 ) -> tuple[list[dict], list[QualityResult], list[AdaptiveDecision]]:
     """
-    Bounded retrieve -> assess -> expand loop. Control flow UNCHANGED from
-    the original implementation — only the assess_quality() call now also
-    receives chunk_embeddings, required for the evidence_diversity metric.
+    Bounded retrieve -> assess -> expand loop.
+
+    Context confidence answers whether the current context is sufficient.
+    Expansion pressure is a separate signal that determines whether another
+    retrieval step is justified when confidence is insufficient.
     """
     chunk_embeddings = chunk_embeddings or {}
     results = initial_results
@@ -241,6 +249,29 @@ def run_adaptive_loop(
                 )
             )
             logger.info("Adaptive loop stopped: max_iterations=%d reached.", max_iterations)
+            break
+
+        expansion_cfg = quality_config.get("expansion", {})
+        min_pressure = expansion_cfg.get("min_pressure", 0.50)
+        expansion_pressure = quality.metrics.get("expansion_pressure", 0.0)
+
+        if expansion_pressure < min_pressure:
+            decision_history.append(
+                AdaptiveDecision(
+                    current_k=current_k, next_k=None,
+                    action="stop_low_expansion_pressure",
+                    reason=(
+                        f"Stopped: expansion_pressure={expansion_pressure:.3f} "
+                        f"< min_pressure={min_pressure:.3f}. {quality.reason}"
+                    ),
+                    iteration=iteration,
+                )
+            )
+            logger.info(
+                "Adaptive loop stopped: expansion_pressure=%.3f below min_pressure=%.3f.",
+                expansion_pressure,
+                min_pressure,
+            )
             break
 
         idx = k_values.index(current_k) if current_k in k_values else -1

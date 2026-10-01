@@ -93,12 +93,17 @@ adaptive_controller:
     comparison: 1
 
 context_quality:
-  confidence_threshold: 0.55   # unchanged value — not tuned per instruction 9
+  confidence_threshold: 0.55   # unchanged value — not tuned
 
   weights:
-    rank_weighted_relevance: 0.50
+    rank_weighted_relevance: 0.70
     evidence_diversity: 0.30
-    expansion_pressure: 0.20
+
+  # Expansion pressure is a separate signal from context confidence.
+  # It determines whether additional retrieval is justified when confidence
+  # is insufficient.
+  expansion:
+    min_pressure: 0.50
 
   gate:
     floor: 0.45
