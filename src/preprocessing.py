@@ -1,12 +1,4 @@
-"""
-Module 1, Step 2 — Document Preprocessing.
 
-Cleans DocumentRecords produced by data_loader.py without destroying
-semantic information. Sentence boundaries (as provided by HotpotQA's
-own sentence splits) are preserved intact — this stage only normalizes
-whitespace/unicode artifacts and drops truly empty sentences. It does
-NOT chunk, embed, or index anything.
-"""
 
 from __future__ import annotations
 
@@ -21,17 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 def clean_sentence(sentence: str) -> str:
-    """
-    Normalize a single sentence's text.
-
-    - Unicode-normalize (NFKC) to fold odd Unicode variants of the same
-      character (e.g. different apostrophe code points) into one form.
-    - Collapse repeated whitespace/newlines/tabs into single spaces.
-    - Strip leading/trailing whitespace.
-
-    Sentence-level word content and order are never altered — only
-    surface-level whitespace/encoding noise is removed.
-    """
+    
     if not sentence:
         return ""
 
@@ -42,16 +24,7 @@ def clean_sentence(sentence: str) -> str:
 
 
 def clean_document(document: DocumentRecord) -> DocumentRecord:
-    """
-    Return a cleaned copy of a DocumentRecord.
-
-    - Cleans each sentence individually via clean_sentence.
-    - Drops sentences that become empty after cleaning (rare, but can
-      happen with stray whitespace-only entries in the raw data).
-    - Rebuilds `text` by re-joining the cleaned sentence list, so `text`
-      and `sentences` stay consistent with each other.
-    - Original DocumentRecord is not mutated; a copy is returned.
-    """
+    
     cleaned_sentences = [clean_sentence(s) for s in document.sentences]
     cleaned_sentences = [s for s in cleaned_sentences if s]  # drop empties
 
@@ -74,10 +47,7 @@ def clean_document(document: DocumentRecord) -> DocumentRecord:
 
 
 def preprocess_documents(documents: list[DocumentRecord]) -> list[DocumentRecord]:
-    """
-    Clean a list of DocumentRecords and drop any that end up with no
-    sentences at all (fully empty articles are not usable downstream).
-    """
+    
     cleaned_docs = []
     for doc in documents:
         cleaned = clean_document(doc)

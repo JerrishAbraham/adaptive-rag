@@ -1,14 +1,3 @@
-"""
-Module 1, Step 1 — HotpotQA Data Loader.
-
-Loads the HotpotQA 'distractor' config, extracts context articles into
-deduplicated DocumentRecords, and keeps question/answer/supporting-fact
-evaluation data separate as QuestionRecords.
-
-No embeddings, chunking, or indexing happens here — this stage only
-produces a clean internal representation of the raw dataset.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -21,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class DocumentRecord:
-    """A single deduplicated Wikipedia-style article from HotpotQA context."""
+
     document_id: str
     title: str
     text: str
@@ -32,7 +21,7 @@ class DocumentRecord:
 
 @dataclass
 class QuestionRecord:
-    """A single HotpotQA benchmark question with its evaluation metadata."""
+
     question_id: str
     question: str
     answer: str
@@ -44,7 +33,7 @@ class QuestionRecord:
 
 
 def normalize_title(title: str) -> str:
-    """Normalize a title for deduplication (lowercase, collapse whitespace)."""
+
     return re.sub(r"\s+", " ", title.strip().lower())
 
 
@@ -53,23 +42,10 @@ def load_hotpotqa_raw(
     sample_limit: Optional[int] = None,
     config: str = "distractor",
 ):
-    """
-    Load the raw HotpotQA dataset via Hugging Face `datasets`.
-
-    Args:
-        split: 'train' or 'validation'.
-        sample_limit: if set, only load this many examples (for fast dev/testing).
-        config: HotpotQA config name; locked to 'distractor' per project scope.
-
-    Returns:
-        A Hugging Face Dataset object.
-    """
     from datasets import load_dataset
 
     logger.info("Loading HotpotQA config=%s split=%s sample_limit=%s", config, split, sample_limit)
-    # Note: HF moved this dataset under the 'hotpotqa/' namespace; the bare
-    # 'hotpot_qa' id triggers a broken legacy-script resolution path in
-    # newer huggingface_hub versions.
+
     dataset = load_dataset("hotpotqa/hotpot_qa", config, split=split)
 
     if sample_limit is not None:
@@ -81,13 +57,7 @@ def load_hotpotqa_raw(
 
 
 def build_records(raw_dataset, split: str) -> tuple[list[DocumentRecord], list[QuestionRecord]]:
-    """
-    Convert raw HotpotQA examples into deduplicated DocumentRecords and
-    separate QuestionRecords.
 
-    Deduplication is by normalized article title: the same article appears
-    as context for many different questions, and we only want to store it once.
-    """
     documents: dict[str, DocumentRecord] = {}
     questions: list[QuestionRecord] = []
 
@@ -143,11 +113,6 @@ def load_hotpotqa_sample(
     sample_limit: int = 50,
     config: str = "distractor",
 ) -> tuple[list[DocumentRecord], list[QuestionRecord]]:
-    """
-    Convenience entry point for Module 1, Step 1.
-
-    Loads a small HotpotQA sample and returns (documents, questions).
-    This is the function later stages (chunking, embeddings) will build on.
-    """
+   
     raw = load_hotpotqa_raw(split=split, sample_limit=sample_limit, config=config)
     return build_records(raw, split=split)

@@ -1,17 +1,3 @@
-"""
-Module 2, Step 10 — Adaptive Retrieval Controller.
-
-Consumes a QueryProfile (from query_analyzer.py) to choose an initial K
-from the configured bounded set, performs the first FAISS retrieval via
-vector_store.search, and records an AdaptiveDecision explaining why that
-K was chosen. This stage performs exactly one retrieval iteration — the
-expand/reassess loop is Module 3 (Context Quality Assessment), which
-consumes what this module produces.
-
-The LLM is not involved anywhere in this module, per the locked scope:
-retrieval depth is decided by query + retrieval-side signals only.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -27,21 +13,12 @@ logger = logging.getLogger(__name__)
 class AdaptiveDecision:
     current_k: int
     next_k: int | None
-    action: str          # "initial_select" | "expand" | "accept" | "stop_max_k"
+    action: str
     reason: str
     iteration: int
 
 
 def select_initial_k(profile: QueryProfile, config: dict, k_values: list[int]) -> AdaptiveDecision:
-    """
-    Choose an initial K using the complexity_score band plus an intent-based
-    bump, both fully configurable and logged with an explicit reason.
-
-    Args:
-        profile: QueryProfile from query_analyzer.analyze_query.
-        config: the 'adaptive_controller' section of config.yaml.
-        k_values: the bounded set of allowed K values (retrieval.adaptive_k_values).
-    """
     bands = config["complexity_bands"]
     chosen_k = None
     band_reason = None
@@ -69,8 +46,6 @@ def select_initial_k(profile: QueryProfile, config: dict, k_values: list[int]) -
             )
             chosen_k = bumped_k
 
-    # Safety clamp: always land on an allowed value even if config bands
-    # are misconfigured with an off-list K.
     if chosen_k not in k_values:
         closest = min(k_values, key=lambda v: abs(v - chosen_k))
         reason_parts.append(f"clamped {chosen_k} -> {closest} (not in allowed k_values)")
@@ -88,17 +63,12 @@ def select_initial_k(profile: QueryProfile, config: dict, k_values: list[int]) -
 
 
 def retrieve_with_k(index, metadata: list[dict], profile: QueryProfile, k: int) -> list[dict]:
-    """
-    Perform one FAISS retrieval call using the query embedding already
-    attached to the QueryProfile (from Step 9). Requires profile.embedding
-    to be set — i.e. analyze_query must have been called with an
-    embedding_model, not None.
-    """
     if profile.embedding is None:
         raise ValueError(
             "QueryProfile has no embedding. Call analyze_query with an "
             "embedding_model to enable retrieval."
         )
+
     results = faiss_search(index, metadata, profile.embedding, k=k)
     logger.info(
         "Retrieved %d results for k=%d (query: %r)",
@@ -114,12 +84,6 @@ def run_initial_retrieval(
     config: dict,
     k_values: list[int],
 ) -> tuple[list[dict], AdaptiveDecision]:
-    """
-    Full Step 10 entry point: select initial K, then perform the first
-    retrieval. Returns (retrieval_results, decision) so both the evidence
-    and the explanation for why that evidence was fetched are available
-    to later stages (Module 3 quality assessment, and eventually logging).
-    """
     decision = select_initial_k(profile, config, k_values)
     results = retrieve_with_k(index, metadata, profile, decision.current_k)
     return results, decision

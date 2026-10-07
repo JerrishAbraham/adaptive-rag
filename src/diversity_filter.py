@@ -1,11 +1,3 @@
-"""
-Module 3, Step 13 — Semantic Diversity Filtering (MMR-style).
-
-Removes redundant chunks from the accepted evidence set using a greedy
-Maximal Marginal Relevance selection: balances query relevance against
-diversity from already-selected chunks. Records pre/post counts and
-selected chunk IDs for later analysis.
-"""
 
 from __future__ import annotations
 
@@ -17,11 +9,7 @@ logger = logging.getLogger(__name__)
 
 
 def _cosine_sim_matrix(vectors: np.ndarray) -> np.ndarray:
-    """
-    Pairwise cosine similarity for a set of vectors. Vectors are assumed
-    already L2-normalized (true for our BGE embeddings), so this is just
-    the Gram matrix (vectors @ vectors.T).
-    """
+   
     return vectors @ vectors.T
 
 
@@ -32,27 +20,7 @@ def mmr_select(
     lambda_param: float,
     target_size: int,
 ) -> list[int]:
-    """
-    Greedy MMR selection.
-
-    Args:
-        query_embedding: shape (dim,), normalized.
-        candidate_embeddings: shape (N, dim), normalized, aligned with
-            candidate_texts by index.
-        candidate_texts: unused directly in scoring (kept for interface
-            clarity / potential future lexical tie-breaking), present so
-            callers don't need to pass a separate id list.
-        lambda_param: trade-off in [0,1]; higher favors relevance,
-            lower favors diversity.
-        target_size: number of candidates to select (capped at N).
-
-    Returns:
-        List of selected candidate indices, in selection order (most
-        relevant first, not necessarily original rank order).
-
-    MMR formula per step: argmax_i [ lambda * relevance(i) -
-        (1 - lambda) * max_similarity(i, already_selected) ]
-    """
+    
     n = candidate_embeddings.shape[0]
     target_size = min(target_size, n)
     if n == 0 or target_size == 0:
@@ -91,24 +59,7 @@ def apply_diversity_filter(
     lambda_param: float,
     target_size: int,
 ) -> tuple[list[dict], dict]:
-    """
-    Apply MMR filtering to a list of RetrievalResult dicts.
-
-    Args:
-        results: RetrievalResult dicts (must include 'chunk_id').
-        candidate_embeddings: dict chunk_id -> np.ndarray, covering every
-            chunk_id present in `results` (e.g. re-fetched from the FAISS
-            index or the embedding cache).
-        query_embedding: the query's embedding vector, normalized.
-        lambda_param: MMR trade-off parameter.
-        target_size: number of chunks to retain.
-
-    Returns:
-        (filtered_results, filter_stats) where filter_stats records
-        pre-filter count, post-filter count, and selected chunk IDs —
-        matching the reference doc's requirement to enable direct
-        analysis of the filtering stage.
-    """
+    
     if not results:
         return [], {"pre_filter_count": 0, "post_filter_count": 0, "selected_chunk_ids": []}
 

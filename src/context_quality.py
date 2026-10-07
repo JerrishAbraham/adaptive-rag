@@ -1,16 +1,3 @@
-"""
-Module 3, Steps 11-12 — Context Quality Assessment and Bounded Adaptive Loop.
-REVISED (v3): RankWeightedRelevance / EvidenceDiversity confidence estimator
-with ExpansionPressure as a separate retrieval-expansion signal, replacing
-the v1 top/mean-similarity + score_gap + unique_sources formula.
-
-Legacy metrics (top_similarity, mean_similarity, score_gap, unique_sources)
-are still computed and reported in the metrics dict for comparison, but no
-longer contribute to the confidence formula.
-
-Fully deterministic — no LLM call anywhere in this module.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -34,10 +21,7 @@ class QualityResult:
 
 
 def compute_rank_weighted_relevance(scores: list[float]) -> float:
-    """
-    Rank-discounted average similarity across the full ranked list.
-    discount_i = 1/log2(i+1) for rank i=1..K. Range: [0, 1].
-    """
+
     if not scores:
         return 0.0
     discounts = [1.0 / math.log2(i + 2) for i in range(len(scores))]
@@ -47,10 +31,7 @@ def compute_rank_weighted_relevance(scores: list[float]) -> float:
 
 
 def compute_evidence_diversity(embedding_matrix: np.ndarray) -> float:
-    """
-    1 - average pairwise cosine similarity among retrieved chunk embeddings.
-    Embeddings assumed L2-normalized. Range: [0, 1]. Requires >= 2 embeddings.
-    """
+    
     n = embedding_matrix.shape[0]
     if n < 2:
         return 0.0
@@ -64,7 +45,7 @@ def compute_evidence_diversity(embedding_matrix: np.ndarray) -> float:
 
 
 def compute_tail_strength(scores: list[float]) -> float:
-    """score_K / score_1. Range: [0, 1]. 0.0 if K<2 or score_1<=0."""
+    
     if len(scores) < 2:
         return 0.0
     if scores[0] <= 0:
@@ -73,7 +54,6 @@ def compute_tail_strength(scores: list[float]) -> float:
 
 
 def compute_gate(rwr: float, floor: float, ceiling: float) -> float:
-    """Linear gate: 0 below floor, 1 at/above ceiling. Range: [0, 1]."""
     if ceiling <= floor:
         logger.warning("Gate ceiling (%.3f) <= floor (%.3f); gate forced to 0.", ceiling, floor)
         return 0.0
@@ -81,17 +61,7 @@ def compute_gate(rwr: float, floor: float, ceiling: float) -> float:
 
 
 def compute_quality_metrics(results: list[dict], chunk_embeddings: dict, config: dict) -> dict:
-    """
-    Computes both legacy (reported only) and new signals. RWR and ED drive
-    context confidence; ExpansionPressure is reported separately for the
-    adaptive expansion decision.
 
-    Args:
-        results: RetrievalResult dicts (similarity_score, chunk_id, document_id),
-            sorted descending by similarity.
-        chunk_embeddings: dict chunk_id -> np.ndarray (L2-normalized).
-        config: the 'context_quality' section of config.yaml.
-    """
     if not results:
         return {
             "top_similarity": 0.0, "mean_similarity": 0.0, "score_gap": 0.0,
@@ -143,15 +113,7 @@ def compute_quality_metrics(results: list[dict], chunk_embeddings: dict, config:
 
 
 def compute_confidence_score(metrics: dict, config: dict) -> float:
-    """
-    Context confidence measures the quality of the current retrieved context.
-
-    Expansion pressure is intentionally NOT part of confidence. It is a
-    separate signal used by run_adaptive_loop() to decide whether retrieving
-    additional context is justified.
-
-    Legacy metrics are NOT read here — they do not affect this formula.
-    """
+  
     weights = config["weights"]
     score = (
         weights["rank_weighted_relevance"] * metrics["rank_weighted_relevance"]
@@ -161,11 +123,7 @@ def compute_confidence_score(metrics: dict, config: dict) -> float:
 
 
 def assess_quality(results: list[dict], config: dict, chunk_embeddings: dict | None = None) -> QualityResult:
-    """
-    Unchanged interface: returns a QualityResult exactly as before.
-    chunk_embeddings defaults to {} (evidence_diversity defaults to 0.0)
-    so any caller not yet updated to pass embeddings fails soft, not hard.
-    """
+    
     chunk_embeddings = chunk_embeddings or {}
     metrics = compute_quality_metrics(results, chunk_embeddings, config)
     confidence = compute_confidence_score(metrics, config)
@@ -199,13 +157,7 @@ def run_adaptive_loop(
     max_iterations: int,
     chunk_embeddings: dict | None = None,
 ) -> tuple[list[dict], list[QualityResult], list[AdaptiveDecision]]:
-    """
-    Bounded retrieve -> assess -> expand loop.
-
-    Context confidence answers whether the current context is sufficient.
-    Expansion pressure is a separate signal that determines whether another
-    retrieval step is justified when confidence is insufficient.
-    """
+   
     chunk_embeddings = chunk_embeddings or {}
     results = initial_results
     decision_history = [initial_decision]

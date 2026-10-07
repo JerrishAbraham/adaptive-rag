@@ -1,12 +1,3 @@
-"""
-Module 5 — Fixed Top-5 Baseline Pipeline.
-
-Implements the locked baseline: always retrieves exactly K=5 chunks via
-plain FAISS similarity search, no adaptive logic, no quality assessment
-loop, no diversity filtering. Used as the comparison point against the
-adaptive pipeline, per the project's locked scope (retrieval.baseline_k: 5).
-"""
-
 from __future__ import annotations
 
 import logging
@@ -36,9 +27,13 @@ class BaselineResult:
 
 
 class FixedTopKPipeline:
-    """Fixed Top-K RAG baseline: no adaptive retrieval, no expansion, no diversity filtering."""
-
-    def __init__(self, index, metadata: list[dict], baseline_k: int = 5, config_path: str = "configs/config.yaml"):
+    def __init__(
+        self,
+        index,
+        metadata: list[dict],
+        baseline_k: int = 5,
+        config_path: str = "configs/config.yaml",
+    ):
         self.index = index
         self.metadata = metadata
         self.baseline_k = baseline_k
@@ -56,11 +51,23 @@ class FixedTopKPipeline:
         start = time.time()
 
         query_vector = self.embedding_model.encode(
-            [question], normalize_embeddings=self.normalize_embeddings, convert_to_numpy=True
+            [question],
+            normalize_embeddings=self.normalize_embeddings,
+            convert_to_numpy=True,
         )[0]
-        results = faiss_search(self.index, self.metadata, query_vector, k=self.baseline_k)
 
-        gen_result = self.generator.generate(query=question, context=results)
+        results = faiss_search(
+            self.index,
+            self.metadata,
+            query_vector,
+            k=self.baseline_k,
+        )
+
+        gen_result = self.generator.generate(
+            query=question,
+            context=results,
+        )
+
         total_latency = time.time() - start
 
         result = BaselineResult(
@@ -77,4 +84,5 @@ class FixedTopKPipeline:
                 "output_tokens": gen_result.output_tokens,
             },
         )
+
         return result

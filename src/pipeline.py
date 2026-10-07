@@ -1,17 +1,3 @@
-"""
-End-to-end Adaptive RAG pipeline.
-
-Wires together Modules 1-4 into a single callable function per query:
-
-Query -> Query Analysis -> Adaptive Retrieval -> Context Quality
-      -> Optional Expansion -> Diversity Filtering -> Prompt Construction
-      -> Generator -> Answer
-
-This module performs NO new logic of its own — it only orchestrates
-calls into the existing, independently-tested modules. Knowledge base
-construction (Module 1's indexing) happens once, outside this function,
-and the resulting (index, metadata, chunk_embeddings) are passed in.
-"""
 
 from __future__ import annotations
 
@@ -51,22 +37,10 @@ class PipelineResult:
 
 
 class AdaptiveRAGPipeline:
-    """
-    Loads all stage configs once and exposes a single `answer(question)`
-    entry point. Meant to be constructed once per process (embedding
-    model + generator client are reused across calls) and reused across
-    many questions during evaluation (Module 5, Part B).
-    """
+    
 
     def __init__(self, index, metadata: list[dict], chunk_embeddings: dict, config_path: str = "configs/config.yaml"):
-        """
-        Args:
-            index: a loaded FAISS index (from vector_store.load_index).
-            metadata: the parallel chunk metadata list.
-            chunk_embeddings: dict chunk_id -> np.ndarray, needed by the
-                diversity filter stage.
-            config_path: path to config.yaml.
-        """
+        
         self.index = index
         self.metadata = metadata
         self.chunk_embeddings = chunk_embeddings
@@ -94,11 +68,7 @@ class AdaptiveRAGPipeline:
         logger.info("AdaptiveRAGPipeline initialized: %d chunks in index", index.ntotal)
 
     def answer(self, question: str) -> PipelineResult:
-        """
-        Run the full pipeline for a single question and return a
-        PipelineResult capturing the answer plus every intermediate
-        decision, for later evaluation/analysis (Module 5, Part B).
-        """
+        
         start = time.time()
 
         # Step 1: Query Analysis

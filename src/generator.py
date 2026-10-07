@@ -1,17 +1,3 @@
-"""
-Stage 4 — Response Generation.
-
-Thin, swappable generator abstraction. The rest of the pipeline calls
-generator.generate(query=..., context=...) and gets back a structured
-GenerationResult — no Groq-specific types or calls leak outside this
-module. Provider/model/temperature/etc. come entirely from config, so
-swapping providers later means adding a new branch here, not touching
-any other module.
-
-The generator NEVER retrieves, re-ranks, or decides K. It receives
-already-optimized context and only produces an answer from it.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -43,15 +29,10 @@ class GenerationResult:
 
 
 class Generator:
-    """Provider-agnostic generator interface, currently backed by Groq."""
+   
 
     def __init__(self, config: dict):
-        """
-        Args:
-            config: the 'generator' section of config.yaml
-                (provider, model, temperature, max_tokens,
-                 reasoning_effort, timeout).
-        """
+        
         self.config = config
         self.provider = config["provider"]
 
@@ -72,20 +53,7 @@ class Generator:
         self._client = Groq(api_key=api_key)
 
     def generate(self, query: str, context: list[dict]) -> GenerationResult:
-        """
-        Generate an answer for `query` grounded in `context`.
-
-        Args:
-            query: the user's question (str).
-            context: list of RetrievalResult-shaped dicts (post diversity
-                filtering), each with at least 'title' and 'text'.
-
-        Returns:
-            GenerationResult with the answer and generation metadata.
-            On failure, success=False and error is populated; answer is
-            an empty string rather than raising, so a single failed
-            generation doesn't crash a batch evaluation run later.
-        """
+       
         prompt = build_prompt(query, context)
         model = self.config["model"]
 

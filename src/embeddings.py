@@ -1,17 +1,3 @@
-"""
-Module 1, Step 4/5 — BGE Embedding Generation and Caching.
-
-Encodes ChunkRecords into vectors using BAAI/bge-base-en-v1.5 via
-sentence-transformers. Embeddings are cached to disk keyed by chunk_id,
-so re-running the pipeline on the same chunks does not recompute
-embeddings that already exist.
-
-Note: BGE's recommended usage adds a search-instruction prefix to QUERY
-text (not passage/chunk text) at retrieval time. Since this stage only
-embeds corpus chunks, no instruction prefix is applied here. Module 2
-(query embedding) is where that instruction will be added.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -28,12 +14,7 @@ _model_cache: dict[str, object] = {}  # in-process model cache, keyed by model_n
 
 
 def load_embedding_model(model_name: str = "BAAI/bge-base-en-v1.5"):
-    """
-    Load (and in-process cache) a SentenceTransformer model.
-
-    Avoids reloading the model from disk repeatedly within the same
-    Python process if this function is called more than once.
-    """
+    
     if model_name in _model_cache:
         return _model_cache[model_name]
 
@@ -46,13 +27,7 @@ def load_embedding_model(model_name: str = "BAAI/bge-base-en-v1.5"):
 
 
 def _load_disk_cache(cache_path: Path, model_name: str) -> dict[str, np.ndarray]:
-    """
-    Load a chunk_id -> embedding cache from disk.
-
-    If the cache was built with a different model_name than the one
-    requested, it is discarded (embeddings from different models are
-    not interchangeable) and an empty cache is returned instead.
-    """
+    
     if not cache_path.exists():
         return {}
 
@@ -83,22 +58,7 @@ def embed_chunks(
     batch_size: int = 32,
     cache_path: str | Path | None = "data/processed/embedding_cache.pkl",
 ) -> dict[str, np.ndarray]:
-    """
-    Generate embeddings for a list of ChunkRecords, using and updating a
-    disk cache keyed by chunk_id.
-
-    Args:
-        chunks: chunks to embed (from chunking.py).
-        model_name: embedding model identifier.
-        normalize: whether to L2-normalize embeddings (required for
-            cosine-similarity FAISS index in Module 1 Step 6).
-        batch_size: encoding batch size.
-        cache_path: path to the pickle cache file, or None to skip caching.
-
-    Returns:
-        dict mapping chunk_id -> np.ndarray embedding, covering every
-        chunk in `chunks` (a mix of newly computed and cached vectors).
-    """
+   
     cache_path = Path(cache_path) if cache_path is not None else None
     cached = _load_disk_cache(cache_path, model_name) if cache_path else {}
 
@@ -132,16 +92,12 @@ def embed_chunks(
 def embeddings_to_matrix(
     chunks: list[ChunkRecord], embeddings: dict[str, np.ndarray]
 ) -> np.ndarray:
-    """
-    Stack embeddings into a single matrix aligned with `chunks` order.
-    Row i corresponds to chunks[i]. This is the exact input format
-    FAISS index-building (Step 6) will need.
-    """
+    
     return np.vstack([embeddings[c.chunk_id] for c in chunks])
 
 
 def load_embedding_config(config_path: str = "configs/config.yaml") -> dict:
-    """Load embedding settings (model_name, normalize_embeddings) from config."""
+    
     import yaml
 
     with open(config_path, "r") as f:

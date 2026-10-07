@@ -1,11 +1,4 @@
-"""
-Stage 4 — Prompt Construction.
 
-Builds a controlled RAG prompt from the query and optimized (diversity-
-filtered) context. Context and question are kept clearly separated so
-the generator's instruction to "answer only from supplied context" has
-an unambiguous boundary to follow.
-"""
 
 from __future__ import annotations
 
@@ -24,11 +17,7 @@ SYSTEM_INSTRUCTION = (
 
 
 def format_context(chunks: list[dict]) -> str:
-    """
-    Format a list of RetrievalResult-shaped dicts (must include 'title'
-    and 'text') into a numbered context block, so individual chunks stay
-    visually distinguishable in the prompt.
-    """
+    
     if not chunks:
         return "(no context retrieved)"
 
@@ -39,12 +28,7 @@ def format_context(chunks: list[dict]) -> str:
 
 
 def build_prompt(query: str, context_chunks: list[dict]) -> dict:
-    """
-    Build the full prompt as a dict with 'system' and 'user' keys, ready
-    to hand to generator.generate(). Kept as a plain dict (not a raw
-    string) so provider-specific message formatting stays inside
-    generator.py, not here.
-    """
+    
     context_block = format_context(context_chunks)
     user_message = (
         f"CONTEXT:\n{context_block}\n\n"

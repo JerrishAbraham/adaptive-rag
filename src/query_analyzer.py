@@ -1,15 +1,3 @@
-"""
-Module 2, Step 9 — Query Analysis: Complexity and Intent Scoring.
-
-Builds a QueryProfile for an incoming query using only lightweight,
-deterministic, reproducible features (query length, naive entity count,
-comparison/multi-hop cue words) — no LLM call, per the locked scope.
-
-This stage does NOT select an initial K or perform retrieval. That is
-Module 2, Step 10 (Adaptive Retrieval Controller), built on top of the
-QueryProfile this module produces.
-"""
-
 from __future__ import annotations
 
 import logging
@@ -41,15 +29,7 @@ def clean_query(query: str) -> str:
 
 
 def _count_naive_entities(query: str) -> int:
-    """
-    Heuristic entity/concept count: capitalized words not at the start
-    of the sentence, treated as a proxy for named entities/concepts.
-
-    Not true NER — deliberately lightweight per the reference doc's
-    requirement to avoid an additional model/LLM call for query analysis.
-    Multi-word proper nouns (e.g. "New York City") are counted as one
-    entity by collapsing consecutive capitalized words.
-    """
+    
     words = query.split()
     if not words:
         return 0
@@ -86,13 +66,7 @@ def _clip_and_scale(value: float, max_value: float) -> float:
 
 
 def extract_features(query: str, config: dict) -> dict:
-    """
-    Extract deterministic complexity/intent features from a cleaned query.
-
-    Returns a dict of raw and normalized feature values, so the scoring
-    weights and thresholds remain visible/auditable rather than hidden
-    inside a single opaque score.
-    """
+    
     query_lower = query.lower()
     word_count = len(query.split())
     entity_count = _count_naive_entities(query)
@@ -114,13 +88,7 @@ def extract_features(query: str, config: dict) -> dict:
 
 
 def compute_complexity_score(features: dict, weights: dict) -> float:
-    """
-    Weighted combination of normalized features into a single 0-1 score.
-
-    Deterministic and fully explainable: given the same weights and the
-    same features dict, the score is always reproducible and each term's
-    contribution can be inspected directly.
-    """
+    
     score = (
         weights["length"] * features["norm_word_count"]
         + weights["entity_count"] * features["norm_entity_count"]
@@ -131,10 +99,7 @@ def compute_complexity_score(features: dict, weights: dict) -> float:
 
 
 def classify_intent(query: str, features: dict, config: dict) -> str:
-    """
-    Rule-based intent classification. Order matters: more specific
-    categories are checked before falling back to 'factual'.
-    """
+    
     query_lower = query.lower()
     intent_keywords = config.get("intent_keywords", {})
 
@@ -161,18 +126,7 @@ def analyze_query(
     embedding_model=None,
     normalize_embedding: bool = True,
 ) -> QueryProfile:
-    """
-    Full Step 9 entry point: clean the query, extract features, score
-    complexity, classify intent, and optionally attach a query embedding.
-
-    Args:
-        query: the raw incoming query string.
-        config: the 'query_analysis' section of config.yaml.
-        embedding_model: an already-loaded SentenceTransformer (from
-            embeddings.load_embedding_model), or None to skip embedding
-            (useful for fast unit tests of the scoring logic alone).
-        normalize_embedding: passed through to model.encode.
-    """
+    
     original_query = query
     cleaned = clean_query(query)
 

@@ -1,21 +1,4 @@
-"""
-Module 5, Part B — Evaluation Metrics and Batch Harness.
 
-Computes:
-  - Generation quality: Exact Match (EM) and token-level F1, standard
-    SQuAD-style normalization (lowercase, strip punctuation/articles,
-    collapse whitespace).
-  - Retrieval quality: supporting-fact title recall — fraction of a
-    question's gold supporting-fact article titles present among the
-    retrieved chunks' titles. Chosen over generic Recall@K because
-    HotpotQA's supporting_facts are the ground-truth evidence signal
-    the dataset actually provides; there is no separate relevance
-    judgment file to compute classic Recall@K against.
-  - Efficiency: average K used, average latency, average tokens.
-
-Runs both the adaptive pipeline and the fixed Top-5 baseline over the
-same question set and reports a side-by-side comparison.
-"""
 
 from __future__ import annotations
 
@@ -28,12 +11,9 @@ from dataclasses import dataclass, field
 logger = logging.getLogger(__name__)
 
 
-# ---------------------------------------------------------------------
-# Generation metrics (EM / F1) — standard SQuAD-style normalization
-# ---------------------------------------------------------------------
 
 def normalize_answer(text: str) -> str:
-    """Lowercase, remove punctuation, remove articles, collapse whitespace."""
+    
     text = text.lower()
     text = re.sub(r"\b(a|an|the)\b", " ", text)
     text = "".join(ch for ch in text if ch not in string.punctuation)
@@ -62,22 +42,12 @@ def f1_score(prediction: str, gold: str) -> float:
     return 2 * precision * recall / (precision + recall)
 
 
-# ---------------------------------------------------------------------
-# Retrieval metric — supporting-fact title recall
-# ---------------------------------------------------------------------
 
 def supporting_fact_title_recall(
     context_chunks: list[dict],
     supporting_facts: list[tuple[str, int]],
 ) -> float:
-    """
-    Fraction of unique gold supporting-fact article titles that appear
-    among the titles of the retrieved/context chunks.
-
-    Returns 1.0 if there are no supporting facts to check (edge case,
-    avoids division by zero) and 0.0 if context is empty but gold
-    supporting facts exist.
-    """
+ 
     gold_titles = {t for t, _ in supporting_facts}
 
     if not gold_titles:
@@ -91,10 +61,6 @@ def supporting_fact_title_recall(
 
     return len(hit) / len(gold_titles)
 
-
-# ---------------------------------------------------------------------
-# Batch evaluation harness
-# ---------------------------------------------------------------------
 
 @dataclass
 class QuestionEvalRecord:
@@ -131,10 +97,7 @@ class EvalSummary:
 
 
 def evaluate_adaptive_pipeline(pipeline, questions: list) -> EvalSummary:
-    """
-    Run the adaptive pipeline over a list of QuestionRecords and compute
-    the full metric set.
-    """
+   
     records = []
 
     for q in questions:
@@ -185,15 +148,7 @@ def evaluate_adaptive_pipeline(pipeline, questions: list) -> EvalSummary:
 
 
 def evaluate_baseline_pipeline(pipeline, questions: list) -> EvalSummary:
-    """
-    Run the fixed Top-K baseline pipeline over the same question list and
-    compute the same metric set (num_iterations is always 1 by definition).
-
-    The baseline does not run context-quality assessment, so:
-      - confidence_score = None
-      - sufficient = None
-      - quality_metrics = {}
-    """
+   
     records = []
 
     for q in questions:
